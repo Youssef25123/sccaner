@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Product Scanner</title>
+<style>
+:root{--bg:#fff8f3;--card:#fff;--tx:#4a3238;--mut:#9a8589;--ac:#cf6a82;--ac2:#f0a58f;--bd:#f3e3dd;--ok:#3b9b6f;--no:#d9434f;color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(60% 40% at 8% 0,#ffe3ea 0,transparent 62%),radial-gradient(50% 40% at 100% 18%,#e3f4ea 0,transparent 60%),var(--bg);color:var(--tx);font-family:system-ui,"Segoe UI",Roboto,sans-serif;line-height:1.5;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+main{max-width:520px;margin:0 auto;padding:14px}
+h1{margin:6px 0 2px;font-size:22px}h2{margin:0 0 8px;font-size:17px}
+.box{background:var(--card);border:1px solid var(--bd);border-radius:20px;padding:14px;margin:12px 0;box-shadow:0 10px 28px rgba(207,106,130,.12)}
+.mut{color:var(--mut);font-size:13px}.row{display:flex;gap:8px;align-items:center;justify-content:space-between}
+input,select{width:100%;padding:11px 12px;border:1.5px solid var(--bd);border-radius:12px;font:inherit;background:#fffdfb;color:var(--tx)}
+input:focus,select:focus{outline:none;border-color:var(--ac);box-shadow:0 0 0 4px rgba(207,106,130,.15)}
+label{display:block;font-size:13px;font-weight:700;margin:8px 0 4px}
+button{font:inherit;font-weight:700;border:0;border-radius:12px;padding:11px 14px;color:#fff;background:linear-gradient(135deg,var(--ac),var(--ac2));cursor:pointer}
+button.ghost{background:transparent;color:var(--tx);border:1.5px solid var(--bd)}button.del{background:transparent;color:var(--no);padding:6px 10px}
+button:disabled{opacity:.5;cursor:default}
+.full{width:100%}
+#cam{position:relative;border-radius:16px;overflow:hidden;background:#1b1316;aspect-ratio:4/3}
+#cam video{width:100%;height:100%;object-fit:cover}
+#cam .frame{position:absolute;inset:22% 12%;border:3px solid rgba(255,255,255,.9);border-radius:16px;box-shadow:0 0 0 999px rgba(0,0,0,.28);pointer-events:none}
+#cam .hint{position:absolute;left:0;right:0;bottom:8px;text-align:center;color:#fff;font-size:13px;text-shadow:0 1px 3px #000}
+.item{display:grid;grid-template-columns:1fr auto;gap:6px 10px;padding:10px 0;border-top:1px solid var(--bd)}
+.item:first-child{border-top:0}
+.tag{display:inline-block;font-size:11px;font-weight:800;border-radius:99px;padding:2px 8px;margin-inline-start:6px}
+.tag.n{background:#ffe3ea;color:var(--ac)}.tag.e{background:#e3f4ea;color:var(--ok)}
+.qty{display:flex;align-items:center;gap:6px}.qty button{padding:4px 11px;font-size:18px}.qty b{min-width:28px;text-align:center;font-size:17px}
+#toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0));transform:translateX(-50%);background:var(--tx);color:#fff;padding:10px 16px;border-radius:14px;font-size:14px;max-width:90%;display:none;z-index:30}
+#modal{position:fixed;inset:0;background:rgba(40,20,28,.45);display:none;align-items:flex-end;justify-content:center;z-index:20}
+#modal .sheet{background:#fff;width:100%;max-width:520px;border-radius:22px 22px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom,0))}
+.hide{display:none!important}
+:focus-visible{outline:3px solid var(--ac);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+  <div class="row"><div><h1>📦 Product Scanner</h1><div class="mut" id="who">Admin only</div></div><button class="ghost hide" id="outBtn" onclick="doOut()">Log out</button></div>
+
+  <section id="login" class="box">
+    <h2>Admin login</h2>
+    <label for="em">Email</label><input id="em" type="email" autocomplete="username">
+    <label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    <p><button class="full" onclick="doLogin()">Log in</button></p>
+  </section>
+
+  <section id="app" class="hide">
+    <div class="box">
+      <div id="cam"><video id="vid" playsinline muted></video><div class="frame"></div><div class="hint" id="hint">Camera is off</div></div>
+      <label for="camSel">Camera</label>
+      <select id="camSel" onchange="camChanged()"><option value="env">Back camera (auto)</option><option value="user">Front camera</option></select>
+      <div class="row" style="margin-top:10px"><button class="full" id="camBtn" onclick="toggleCam()">Start camera</button><button class="ghost hide" id="torchBtn" onclick="toggleTorch()">🔦</button></div>
+      <div id="zoomRow" class="hide" style="margin-top:8px"><label for="zoom">Zoom</label><input id="zoom" type="range" min="1" max="4" step="0.1" value="1" oninput="setZoom(this.value)"></div>
+      <div class="mut" id="idxMsg" style="margin-top:8px"></div>
+      <div class="row" style="margin-top:10px"><input id="manual" inputmode="numeric" placeholder="Or type / scan with a USB scanner, then Enter" onkeydown="if(event.key==='Enter')manualAdd()"><button onclick="manualAdd()">Add</button></div>
+    </div>
+
+    <div class="box">
+      <div class="row"><h2>This batch <span class="mut" id="cnt"></span></h2><button class="ghost" onclick="clearBatch()">Clear</button></div>
+      <div id="list" class="mut">Scan a product to start.</div>
+      <p style="margin:12px 0 0"><button class="full" id="confirmBtn" onclick="confirmBatch()">Confirm and send to the shop</button></p>
+    </div>
+  </section>
+</main>
+
+<div id="modal"><div class="sheet">
+  <h2>New product</h2><div class="mut" id="mCode"></div>
+  <label for="mName">Product name</label><input id="mName" autocomplete="off">
+  <label for="mPrice">Price (EGP)</label><input id="mPrice" inputmode="decimal" autocomplete="off" onkeydown="if(event.key==='Enter')saveNew()">
+  <label for="mLink">Or link this barcode to a product you already have</label>
+  <select id="mLink"><option value="">— no, it is a new product —</option></select>
+  <div class="row" style="margin-top:12px"><button class="ghost full" onclick="cancelNew()">Cancel</button><button class="full" onclick="saveNew()">Add to batch</button></div>
+</div></div>
+<div id="toast" role="status"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+import { getDatabase, ref, onValue, update, push, runTransaction } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-database.js";
+
+const ADMIN_EMAIL = "youssefkhaledyoussef869@gmail.com";
+const app = initializeApp({
+  apiKey: "AIzaSyBtRCjNPB5y9iuSW2FmyirL_ufxJ8DXfkM", authDomain: "e-com-28d65.firebaseapp.com",
+  databaseURL: "https://e-com-28d65-default-rtdb.europe-west1.firebasedatabase.app", projectId: "e-com-28d65",
+  storageBucket: "e-com-28d65.firebasestorage.app", messagingSenderId: "742284366006", appId: "1:742284366006:web:7542880d63016211095617"
+});
+const auth = getAuth(app), db = getDatabase(app);
+const $ = i => document.getElementById(i);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const norm = c => { c = String(c == null ? '' : c).trim(); return /^\d+$/.test(c) ? c.replace(/^0+(?=\d)/, '') : c.toUpperCase(); };
+let products = {}, byCode = {}, batch = [], pending = null, unsubP = null, tt, loaded = false;
+try { JSON.parse(localStorage.getItem('scanIdx') || '[]').forEach(e => { products[e.id] = { id: e.id, name: e.name, price: e.price, stock: e.stock, barcode: e.k }; byCode[norm(e.k)] = e.id; loaded = true; }); } catch (e) {}
+const saveIdx = () => { try { localStorage.setItem('scanIdx', JSON.stringify(Object.values(products).filter(p => p.barcode).map(p => ({ id: p.id, k: p.barcode, name: p.name, price: p.price, stock: p.stock })))); } catch (e) {} };
+const idxMsg = () => { const e = $('idxMsg'); if (e) e.textContent = loaded ? Object.keys(byCode).length + ' known barcode(s) loaded' : 'Loading your products...'; };
+try { batch = JSON.parse(localStorage.getItem('scanBatch') || '[]').filter(i => i && i.code && i.qty > 0); } catch (e) { batch = []; }
+
+function toast(m) { const t = $('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(tt); tt = setTimeout(() => { t.style.display = 'none'; }, 3200); }
+const save = () => { try { localStorage.setItem('scanBatch', JSON.stringify(batch)); } catch (e) {} };
+function beep() { try { const a = new (window.AudioContext || window.webkitAudioContext)(), o = a.createOscillator(), g = a.createGain(); o.connect(g); g.connect(a.destination); o.frequency.value = 880; g.gain.value = .08; o.start(); setTimeout(() => { o.stop(); a.close(); }, 110); } catch (e) {} if (navigator.vibrate) navigator.vibrate(40); }
+
+// ---------- login ----------
+window.doLogin = async function() {
+  const e = $('em').value.trim(), p = $('pw').value;
+  if (!e || !p) return toast('Enter email and password');
+  try { await signInWithEmailAndPassword(auth, e, p); } catch (x) { toast(x.code === 'auth/unauthorized-domain' ? 'This website address is not allowed yet in Firebase (Authorized domains)' : 'Login failed: ' + (x.code || x.message)); }
+};
+window.doOut = () => signOut(auth);
+onAuthStateChanged(auth, u => {
+  if (u && u.email !== ADMIN_EMAIL) { toast('This tool is for the store admin only'); signOut(auth); return; }
+  const on = !!u;
+  $('login').classList.toggle('hide', on); $('app').classList.toggle('hide', !on); $('outBtn').classList.toggle('hide', !on);
+  $('who').textContent = on ? u.email : 'Admin only';
+  if (unsubP) { unsubP(); unsubP = null; }
+  if (on) {
+    unsubP = onValue(ref(db, 'products'), s => {
+      const v = s.val() || {}; products = {}; byCode = {};
+      Object.keys(v).forEach(id => { const p = v[id]; products[id] = { id, name: p.name, price: p.price, stock: p.stock, barcode: p.barcode }; if (p.barcode) byCode[norm(p.barcode)] = id; });
+      loaded = true; saveIdx(); idxMsg(); renderBatch();
+    }, e => toast('Could not read products: ' + (e.code || e.message)));
+    renderBatch();
+  } else { stopCam(); }
+});
+
+// ---------- batch ----------
+function renderBatch() {
+  const l = $('list'); if (!l) return;
+  $('cnt').textContent = batch.length ? '(' + batch.reduce((s, i) => s + i.qty, 0) + ' items)' : '';
+  if (!batch.length) { l.className = 'mut'; l.textContent = 'Scan a product to start.'; return; }
+  l.className = '';
+  l.innerHTML = batch.map((i, k) => {
+    const ex = i.pid ? products[i.pid] : null, nm = i.pid ? (ex ? ex.name : '(deleted product)') : i.name;
+    return '<div class="item"><div><b>' + esc(nm) + '</b><span class="tag ' + (i.pid ? 'e' : 'n') + '">' + (i.pid ? (i.link ? 'linked' : 'existing') : 'new') + '</span><div class="mut">' + esc(i.code) + (i.pid ? (ex ? ' · in stock now: ' + (ex.stock == null ? 'n/a' : ex.stock) : '') : ' · ' + esc(i.price) + ' EGP') + '</div></div>'
+      + '<div class="qty"><button class="ghost" aria-label="Less" onclick="chg(' + k + ',-1)">−</button><b>' + i.qty + '</b><button class="ghost" aria-label="More" onclick="chg(' + k + ',1)">+</button><button class="del" aria-label="Remove" onclick="rm(' + k + ')">🗑</button></div></div>';
+  }).join('');
+}
+window.chg = (k, d) => { const i = batch[k]; if (!i) return; i.qty = Math.max(0, Math.min(5000, i.qty + d)); if (!i.qty) batch.splice(k, 1); save(); renderBatch(); };
+window.rm = k => { batch.splice(k, 1); save(); renderBatch(); };
+window.clearBatch = () => { if (batch.length && !confirm('Clear the whole batch?')) return; batch = []; save(); renderBatch(); };
+
+// ---------- a code was scanned ----------
+let lastCode = '', lastAt = 0;
+function onCode(raw) {
+  const code = String(raw || '').trim(), nc = norm(code);
+  if (!code || code.length > 64 || pending) return;
+  const now = Date.now(); if (code === lastCode && now - lastAt < 1500) return; lastCode = code; lastAt = now;
+  const hit = batch.find(i => norm(i.code) === nc);
+  if (hit) { hit.qty++; save(); renderBatch(); beep(); toast('+1 · total ' + hit.qty); return; }
+  const pid = byCode[nc];
+  if (pid) { batch.push({ code, pid, qty: 1 }); save(); renderBatch(); beep(); toast('Known product: ' + (products[pid] ? products[pid].name : '')); return; }
+  if (!loaded) { toast('Still loading your products, scan again in a moment'); return; }
+  beep(); openNew(code);
+}
+window.manualAdd = () => { const v = $('manual').value; $('manual').value = ''; if (v.trim()) onCode(v); };
+
+// ---------- new product sheet ----------
+function openNew(code) {
+  pending = code; $('mCode').textContent = 'Barcode: ' + code; $('mName').value = ''; $('mPrice').value = '';
+  $('mLink').innerHTML = '<option value="">— no, it is a new product —</option>' + Object.values(products).filter(p => !p.barcode).sort((a, b) => String(a.name).localeCompare(String(b.name))).map(p => '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>').join('');
+  $('modal').style.display = 'flex'; setTimeout(() => $('mName').focus(), 50);
+}
+window.cancelNew = () => { pending = null; $('modal').style.display = 'none'; };
+window.saveNew = function() {
+  if (!pending) return;
+  const link = $('mLink').value;
+  if (link) { batch.push({ code: pending, pid: link, link: true, qty: 1 }); }
+  else {
+    const name = $('mName').value.trim(), price = parseFloat(String($('mPrice').value).replace(',', '.'));
+    if (!name) return toast('Enter the product name');
+    if (!isFinite(price) || price < 0 || price > 1000000) return toast('Enter a valid price');
+    batch.push({ code: pending, name: name.slice(0, 150), price: Math.round(price * 100) / 100, qty: 1 });
+  }
+  pending = null; $('modal').style.display = 'none'; save(); renderBatch(); toast('Added to the batch');
+};
+
+// ---------- send to the shop ----------
+window.confirmBatch = async function() {
+  const items = batch.filter(i => i.qty > 0);
+  if (!items.length) return toast('Nothing to send yet');
+  const btn = $('confirmBtn'); btn.disabled = true; btn.textContent = 'Sending...';
+  let made = 0, bumped = 0;
+  try {
+    const up = {}, bumps = [];
+    items.forEach(i => {
+      if (!i.pid) { const id = push(ref(db, 'products')).key; up['products/' + id] = { name: i.name, price: i.price, stock: i.qty, barcode: i.code, at: Date.now() }; made++; }
+      else { if (i.link) up['products/' + i.pid + '/barcode'] = i.code; bumps.push(i); }
+    });
+    if (Object.keys(up).length) await update(ref(db), up);
+    for (const i of bumps) {
+      await runTransaction(ref(db, 'products/' + i.pid + '/stock'), cur => Math.min(100000, (Number(cur) || 0) + i.qty));
+      bumped++;
+    }
+    batch = []; save(); renderBatch();
+    toast('Done: ' + made + ' new product(s), ' + bumped + ' stock update(s)');
+  } catch (e) { console.error(e); toast('Send failed: ' + (e.code || e.message) + '. Your batch is kept, try again.'); }
+  btn.disabled = false; btn.textContent = 'Confirm and send to the shop';
+};
+
+// ---------- camera ----------
+let stream = null, scanning = false, track = null, tick = 0, zxHints = null, zxReader = null, det = null, cand = { code: '', n: 0, at: 0 };
+const cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently: true });
+const loadZx = () => new Promise((res, rej) => { if (window.ZXing) return res(); const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/index.min.js'; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+
+async function listCams() {
+  try {
+    const d = (await navigator.mediaDevices.enumerateDevices()).filter(x => x.kind === 'videoinput');
+    const sel = $('camSel'); let keep = 'env'; try { keep = localStorage.getItem('scanCam') || sel.value || 'env'; } catch (e) { keep = sel.value || 'env'; }
+    sel.innerHTML = '<option value="env">Back camera (auto)</option><option value="user">Front camera</option>' + d.map((x, i) => '<option value="id:' + esc(x.deviceId) + '">' + esc(x.label || ('Camera ' + (i + 1))) + '</option>').join('');
+    sel.value = [...sel.options].some(o => o.value === keep) ? keep : 'env';
+  } catch (e) {}
+}
+window.camChanged = () => { try { localStorage.setItem('scanCam', $('camSel').value); } catch (e) {} if (scanning) { stopCam(); startCam(); } };
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', listCams);
+listCams();
+
+function constraints() {
+  const v = $('camSel').value, base = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+  if (v.indexOf('id:') === 0) base.deviceId = { exact: v.slice(3) }; else base.facingMode = { ideal: v === 'user' ? 'user' : 'environment' };
+  return { video: base, audio: false };
+}
+window.toggleCam = () => (scanning ? stopCam() : startCam());
+
+async function startCam() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return toast('Camera needs https and a modern browser. You can still type the barcode.');
+  $('camBtn').disabled = true; $('hint').textContent = 'Starting camera...';
+  try {
+    stream = await navigator.mediaDevices.getUserMedia(constraints());
+    track = stream.getVideoTracks()[0];
+    const v = $('vid'); v.srcObject = stream; await v.play();
+    try { await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {}
+    const caps = (track.getCapabilities && track.getCapabilities()) || {};
+    $('torchBtn').classList.toggle('hide', !caps.torch);
+    $('zoomRow').classList.toggle('hide', !caps.zoom);
+    if (caps.zoom) { const z = $('zoom'); z.min = caps.zoom.min; z.max = Math.min(caps.zoom.max, 8); z.step = caps.zoom.step || 0.1; z.value = caps.zoom.min; }
+    await listCams();
+    if ('BarcodeDetector' in window) {
+      try { det = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'qr_code'] }); } catch (e) { det = null; }
+    }
+    if (!det) {
+      await loadZx();
+      const Z = window.ZXing, F = Z.BarcodeFormat;
+      zxHints = new Map(); zxHints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.ITF, F.QR_CODE]); zxHints.set(Z.DecodeHintType.TRY_HARDER, true);
+      zxReader = new Z.MultiFormatReader(); zxReader.setHints(zxHints);
+    }
+    scanning = true; tick = 0; $('camBtn').textContent = 'Stop camera'; $('hint').textContent = 'Hold the barcode inside the frame, steady';
+    loop();
+  } catch (e) {
+    console.error(e); stopCam();
+    toast(e && e.name === 'NotAllowedError' ? 'Allow camera access in the browser, then try again' : e && (e.name === 'NotFoundError' || e.name === 'OverconstrainedError') ? 'That camera is not available. Pick another one from the list.' : 'Could not start the camera. You can still type the barcode.');
+  }
+  $('camBtn').disabled = false;
+}
+
+function grab(full) {
+  const v = $('vid'), vw = v.videoWidth, vh = v.videoHeight; if (!vw) return null;
+  const sx = full ? 0 : vw * .06, sy = full ? 0 : vh * .18, sw = full ? vw : vw * .88, sh = full ? vh : vh * .64, k = Math.min(1, 1000 / sw);
+  cv.width = Math.round(sw * k); cv.height = Math.round(sh * k);
+  cx.drawImage(v, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+  return cv;
+}
+function zxDecode(c, invert) {
+  const d = cx.getImageData(0, 0, c.width, c.height).data, n = c.width * c.height, lum = new Uint8ClampedArray(n);
+  for (let i = 0, j = 0; i < n; i++, j += 4) lum[i] = (d[j] * 306 + d[j + 1] * 601 + d[j + 2] * 117) >> 10;
+  const Z = window.ZXing; let src = new Z.RGBLuminanceSource(lum, c.width, c.height); if (invert) src = src.invert();
+  try { return zxReader.decodeWithState(new Z.BinaryBitmap(new Z.HybridBinarizer(src))).getText(); } catch (e) { return null; }
+}
+// a code is accepted only after it is read twice in a row, which removes wrong reads
+function onRead(code) {
+  const now = Date.now();
+  if (cand.code === code && now - cand.at < 1500) cand.n++; else cand = { code, n: 1, at: now };
+  cand.at = now;
+  if (cand.n >= 2) { cand = { code: '', n: 0, at: 0 }; onCode(code); }
+}
+async function loop() {
+  if (!scanning) return;
+  const t0 = performance.now();
+  try {
+    if (!pending && $('vid').readyState >= 2) {
+      const full = tick++ % 3 === 2, c = grab(full);
+      if (c) {
+        let code = null;
+        if (det) { const r = await det.detect(c); if (r && r[0]) code = r[0].rawValue; }
+        else { code = zxDecode(c, false) || (tick % 4 === 0 ? zxDecode(c, true) : null); }
+        if (code) onRead(code);
+      }
+    }
+  } catch (e) {}
+  setTimeout(loop, Math.max(30, 110 - (performance.now() - t0)));
+}
+window.toggleTorch = async function() { try { const on = !$('torchBtn').classList.contains('on'); await track.applyConstraints({ advanced: [{ torch: on }] }); $('torchBtn').classList.toggle('on', on); $('torchBtn').style.background = on ? 'var(--ac)' : ''; $('torchBtn').style.color = on ? '#fff' : ''; } catch (e) { toast('Flash is not available on this camera'); } };
+window.setZoom = async v => { try { await track.applyConstraints({ advanced: [{ zoom: Number(v) }] }); } catch (e) {} };
+function stopCam() {
+  scanning = false; zxReader = null; det = null; cand = { code: '', n: 0, at: 0 };
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; track = null; }
+  const v = $('vid'); if (v) v.srcObject = null;
+  if ($('camBtn')) { $('camBtn').textContent = 'Start camera'; $('hint').textContent = 'Camera is off'; $('torchBtn').classList.add('hide'); $('zoomRow').classList.add('hide'); }
+}
+renderBatch(); idxMsg();
+</script>
+</body>
+</html>
